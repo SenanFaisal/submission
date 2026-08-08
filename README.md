@@ -1,6 +1,6 @@
 # QA Technical Assessment — Submission
 
-Level assessed against: Senior (Tasks 1–4 required, Task 5 optional bonus).
+Level assessed against: Senior (Tasks 1–4 required).
 
 ## Time spent
 
