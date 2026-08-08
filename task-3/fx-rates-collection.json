@@ -1,0 +1,192 @@
+{
+  "info": {
+    "name": "FX Rates API - Task 3 Part A",
+    "description": "Validates the open.er-api.com FX rates endpoint used to show customers an indicative rate before an international transfer.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "https://open.er-api.com/v6" },
+    { "key": "baseCurrency", "value": "USD" }
+  ],
+  "item": [
+    {
+      "name": "1 - Data-driven base currency checks",
+      "item": [
+        {
+          "name": "Get latest rates for {{baseCurrency}}",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/latest/{{baseCurrency}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["latest", "{{baseCurrency}}"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Response time is acceptable for a rate lookup shown during a live transfer flow\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(3000);",
+                  "});",
+                  "",
+                  "pm.test(\"Result field indicates success\", function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json.result).to.eql(\"success\");",
+                  "});",
+                  "",
+                  "pm.test(\"Response has the expected shape\", function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json).to.have.property(\"base_code\");",
+                  "    pm.expect(json).to.have.property(\"rates\");",
+                  "    pm.expect(json).to.have.property(\"time_last_update_utc\");",
+                  "    pm.expect(json.base_code).to.eql(pm.variables.get(\"baseCurrency\"));",
+                  "});",
+                  "",
+                  "pm.test(\"Key target currencies are present with sensible, non-zero values\", function () {",
+                  "    const json = pm.response.json();",
+                  "    const targets = [\"USD\", \"EUR\", \"GBP\", \"PKR\", \"SAR\"];",
+                  "    targets.forEach(function (code) {",
+                  "        pm.expect(json.rates, code + \" missing from rates\").to.have.property(code);",
+                  "        const rate = json.rates[code];",
+                  "        pm.expect(rate, code + \" is not a number\").to.be.a(\"number\");",
+                  "        pm.expect(rate, code + \" is not above zero\").to.be.above(0);",
+                  "        pm.expect(rate, code + \" is implausibly large - possible bad data\").to.be.below(1000000);",
+                  "    });",
+                  "});",
+                  "",
+                  "// Capture USD->EUR for the chained consistency check in folder 2.",
+                  "// Only meaningful on the USD iteration - guarded so other rows don't overwrite it.",
+                  "if (pm.variables.get(\"baseCurrency\") === \"USD\") {",
+                  "    const json = pm.response.json();",
+                  "    pm.environment.set(\"usdToEurRate\", json.rates.EUR);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "2 - Chained request (captured value reused)",
+      "item": [
+        {
+          "name": "Get latest rates for USD (capture EUR rate)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/latest/USD",
+              "host": ["{{baseUrl}}"],
+              "path": ["latest", "USD"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "pm.environment.set(\"usdToEurRate\", json.rates.EUR);",
+                  "",
+                  "pm.test(\"Captured USD->EUR rate is a sensible positive number\", function () {",
+                  "    pm.expect(json.rates.EUR).to.be.a(\"number\").and.to.be.above(0);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get latest rates for EUR (cross-check against captured value)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/latest/EUR",
+              "host": ["{{baseUrl}}"],
+              "path": ["latest", "EUR"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"EUR->USD rate is the mathematical reciprocal of the earlier USD->EUR rate\", function () {",
+                  "    const json = pm.response.json();",
+                  "    const eurToUsd = json.rates.USD;",
+                  "    const usdToEur = pm.environment.get(\"usdToEurRate\");",
+                  "    pm.expect(usdToEur, \"usdToEurRate was not captured - run the USD request first\").to.not.be.undefined;",
+                  "",
+                  "    const impliedUsdToEur = 1 / eurToUsd;",
+                  "    const diff = Math.abs(impliedUsdToEur - usdToEur);",
+                  "    // small tolerance: the two calls may hit slightly different snapshots of the rate table",
+                  "    pm.expect(diff, \"USD->EUR and 1/(EUR->USD) diverge by more than expected\").to.be.below(0.01);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "3 - Negative case",
+      "item": [
+        {
+          "name": "Get latest rates for malformed currency code (ZZZ)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/latest/ZZZ",
+              "host": ["{{baseUrl}}"],
+              "path": ["latest", "ZZZ"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// This API's documented error shape is: {\"result\":\"error\",\"error-type\":\"unknown-code\"}",
+                  "// What is NOT documented (and worth confirming when you actually run this) is which",
+                  "// HTTP status code it ships with that body. Some free-tier rate providers return",
+                  "// this kind of error with HTTP 200, which matters a lot if a real banking backend",
+                  "// only checks status codes and never inspects the body.",
+                  "",
+                  "pm.test(\"Malformed currency code returns an explicit error body, not default/garbage data\", function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json.result).to.eql(\"error\");",
+                  "    pm.expect(json).to.have.property(\"error-type\");",
+                  "});",
+                  "",
+                  "pm.test(\"Record the actual HTTP status returned for this error case\", function () {",
+                  "    console.log(\"Observed HTTP status for /latest/ZZZ:\", pm.response.code);",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 400, 404, 422]);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

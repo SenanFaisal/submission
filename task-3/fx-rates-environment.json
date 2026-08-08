@@ -1,0 +1,8 @@
+{
+  "name": "FX Rates - Task 3",
+  "values": [
+    { "key": "baseUrl", "value": "https://open.er-api.com/v6", "enabled": true },
+    { "key": "baseCurrency", "value": "USD", "enabled": true },
+    { "key": "usdToEurRate", "value": "", "enabled": true }
+  ]
+}
